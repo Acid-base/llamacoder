@@ -1,7 +1,8 @@
+
 import shadcnDocs from "@/utils/shadcn-docs";
 import dedent from "dedent";
-import Together from "together-ai";
 import { z } from "zod";
+import { Together } from "together-ai";
 
 let options: ConstructorParameters<typeof Together>[0] = {};
 if (process.env.HELICONE_API_KEY) {
@@ -55,29 +56,29 @@ export async function POST(req: Request) {
     temperature: 0.2,
   });
 
-  let textStream = res
-    .toReadableStream()
-    .pipeThrough(new TextDecoderStream())
-    .pipeThrough(
-      new TransformStream({
-        transform(chunk, controller) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async pull(controller) {
+      try {
+        for await (const chunk of res.data) {
           if (chunk) {
-            try {
-              let text = JSON.parse(chunk).choices[0].text;
-              controller.enqueue(text);
-            } catch (error) {
-              console.error(error);
-            }
+            const text = JSON.parse(chunk).choices[0].text;
+            controller.enqueue(encoder.encode(text));
           }
-        },
-      }),
-    )
-    .pipeThrough(new TextEncoderStream());
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        controller.done();
+      }
+    },
+  });
 
-  return new Response(textStream, {
-    headers: new Headers({
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-cache",
-    }),
+    },
   });
 }
 
